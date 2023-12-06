@@ -14,54 +14,27 @@ void hannWindow(float *signal, int length)
   }
 }
 
-void constantOverlapAdd(float *inputSignal, int inputLength, float *outputSignal, int windowSize, int hopSize)
+// Function to calculate auto-correlation of a signal
+void autoCorrelation(const arma::vec &signal, arma::vec &result)
 {
-  // Iterate over the input signal with overlapping windows
-  for (int i = 0; i < inputLength - windowSize; i += hopSize)
-  {
-    // Apply Hann window to the current window
-    hannWindow(inputSignal + i, windowSize);
+  int length = signal.n_elem;
+  result.set_size(length);
 
-    // Add the windowed portion to the output signal
-    for (int j = 0; j < windowSize; ++j)
-    {
-      outputSignal[i + j] += inputSignal[i + j];
-    }
+  for (int lag = 0; lag < length; ++lag)
+  {
+    result(lag) = arma::accu(signal.head(length - lag) % signal.tail(length - lag));
   }
 }
 
-void colaAutoCorrelation(float *signal, int signalLength, int frameSize, int hopSize)
+// Function to generate filter coefficients using linear prediction
+void linearPrediction(const arma::vec &autoCorr, int order, arma::vec &coefficients)
 {
-  // Initialize buffer for overlap-add
-  int bufferSize = frameSize + hopSize;
-  float buffer[bufferSize] = {0};
+  int length = autoCorr.n_elem;
+  arma::mat R = arma::toeplitz(autoCorr.head(order + 1));
 
-  // Process overlapping frames
-  for (int i = 0; i < signalLength - frameSize; i += hopSize)
-  {
-    // Copy samples to buffer with overlap
-    for (int j = 0; j < frameSize; ++j)
-    {
-      buffer[j] = buffer[j + hopSize];
-      buffer[j + hopSize] = signal[i + j];
-    }
-
-    // Apply Hann window to the buffer
-    hannWindow(buffer, bufferSize);
-
-    float autoCorr[signalLength];
-    for (int lag = 0; lag < signalLength; ++lag)
-    {
-      autoCorr[lag] = 0.0;
-      for (int i = 0; i < signalLength - lag; ++i)
-      {
-        autoCorr[lag] += inputSignal[i] * inputSignal[i + lag];
-      }
-    }
-  }
-  float maxI = findMaxIndex(autoCoor, signalLength);
-  float pitch = calculatePitch(44100, maxI);
-  return pitch;
+  // Solve the system of linear equations using mlpack's linear regression
+  mlpack::regression::LinearRegression lr(R, autoCorr.subvec(1, order));
+  coefficients = lr.Parameters();
 }
 
 int findMaxIndex(const float *array, int length)
@@ -83,6 +56,24 @@ float calculatePitch(int sampleRate, int maxIndex)
 {
   // Convert the lag to pitch (in Hz)
   return sampleRate / static_cast<float>(maxIndex);
+}
+
+void applyLPCFilter(const arma::vec &inputSignal, const arma::vec &lpcCoefficients, arma::vec &outputSignal)
+{
+  int order = lpcCoefficients.n_elem - 1; // LPC order
+
+  // Initialize the output signal
+  outputSignal.set_size(inputSignal.n_elem);
+
+  // Apply the all-pole filter
+  for (size_t i = 0; i < inputSignal.n_elem; ++i)
+  {
+    outputSignal(i) = inputSignal(i);
+    for (int j = 1; j <= order; ++j)
+    {
+      outputSignal(i) -= lpcCoefficients(j) * outputSignal(i - j);
+    }
+  }
 }
 
 int main(int argc, char *argv[])
@@ -172,68 +163,52 @@ int main(int argc, char *argv[])
   drwav_close(pWav);
 }
 
-// Function to calculate auto-correlation of a signal
-void autoCorrelation(const arma::vec &signal, arma::vec &result)
+void constantOverlapAdd(float *inputSignal, int inputLength, float *outputSignal, int windowSize, int hopSize)
 {
-  int length = signal.n_elem;
-  result.set_size(length);
-
-  for (int lag = 0; lag < length; ++lag)
+  // Iterate over the input signal with overlapping windows
+  for (int i = 0; i < inputLength - windowSize; i += hopSize)
   {
-    result(lag) = arma::accu(signal.head(length - lag) % signal.tail(length - lag));
-  }
-}
+    // Apply Hann window to the current window
+    hannWindow(inputSignal + i, windowSize);
 
-// Function to generate filter coefficients using linear prediction
-void linearPrediction(const arma::vec &autoCorr, int order, arma::vec &coefficients)
-{
-  int length = autoCorr.n_elem;
-  arma::mat R = arma::toeplitz(autoCorr.head(order + 1));
-
-  // Solve the system of linear equations using mlpack's linear regression
-  mlpack::regression::LinearRegression lr(R, autoCorr.subvec(1, order));
-  coefficients = lr.Parameters();
-}
-
-// int main() {
-//     // Example parameters
-//     const int order = 10;  // LPC order
-
-//     arma::vec signal;  // Replace this with your actual signal data
-//     // ...
-
-//     // Apply Hann window to the signal (if necessary)
-//     // ...
-
-//     // Calculate auto-correlation
-//     arma::vec autoCorr(order + 1);
-//     autoCorrelation(signal, autoCorr);
-
-//     // Generate filter coefficients using linear prediction
-//     arma::vec coefficients;
-//     linearPrediction(autoCorr, order, coefficients);
-
-//     // Print the coefficients (replace this with your actual usage)
-//     std::cout << "Filter Coefficients:" << std::endl;
-//     std::cout << coefficients.t() << std::endl;
-
-//     return 0;
-// }
-
-void applyLPCFilter(const arma::vec &inputSignal, const arma::vec &lpcCoefficients, arma::vec &outputSignal)
-{
-  int order = lpcCoefficients.n_elem - 1; // LPC order
-
-  // Initialize the output signal
-  outputSignal.set_size(inputSignal.n_elem);
-
-  // Apply the all-pole filter
-  for (size_t i = 0; i < inputSignal.n_elem; ++i)
-  {
-    outputSignal(i) = inputSignal(i);
-    for (int j = 1; j <= order; ++j)
+    // Add the windowed portion to the output signal
+    for (int j = 0; j < windowSize; ++j)
     {
-      outputSignal(i) -= lpcCoefficients(j) * outputSignal(i - j);
+      outputSignal[i + j] += inputSignal[i + j];
     }
   }
+}
+
+void colaAutoCorrelation(float *signal, int signalLength, int frameSize, int hopSize)
+{
+  // Initialize buffer for overlap-add
+  int bufferSize = frameSize + hopSize;
+  float buffer[bufferSize] = {0};
+
+  // Process overlapping frames
+  for (int i = 0; i < signalLength - frameSize; i += hopSize)
+  {
+    // Copy samples to buffer with overlap
+    for (int j = 0; j < frameSize; ++j)
+    {
+      buffer[j] = buffer[j + hopSize];
+      buffer[j + hopSize] = signal[i + j];
+    }
+
+    // Apply Hann window to the buffer
+    hannWindow(buffer, bufferSize);
+
+    float autoCorr[signalLength];
+    for (int lag = 0; lag < signalLength; ++lag)
+    {
+      autoCorr[lag] = 0.0;
+      for (int i = 0; i < signalLength - lag; ++i)
+      {
+        autoCorr[lag] += inputSignal[i] * inputSignal[i + lag];
+      }
+    }
+  }
+  float maxI = findMaxIndex(autoCoor, signalLength);
+  float pitch = calculatePitch(44100, maxI);
+  return pitch;
 }
