@@ -60,13 +60,12 @@ int main(int argc, char *argv[])
   // outer loop for windowing
   for (int bin = 0; bin < (sigLength / hopSize); bin++)
   {
-      // temp vec for windowed signal
-      arma::vec chunk = arma :: vec(windowSize);
+    // temp vec for windowed signal
+    arma::vec chunk = arma ::vec(windowSize);
 
     // inner window loop
     for (int j = 0; j < windowSize; j++)
     {
-
 
       // current value with hann window applied
       float curHann = origSig[bin * hopSize + j] * 0.5 * (1 - std::cos(2 * M_PI * j / (windowSize - 1)));
@@ -78,7 +77,7 @@ int main(int argc, char *argv[])
     // perform autocorrelation on the chunk vector
     for (int lag = 0; lag < windowSize; lag++)
     {
-      coor[lag] = arma :: accu(chunk.head(windowSize - lag) % chunk.tail(windowSize - lag));
+      coor[lag] = arma ::accu(chunk.head(windowSize - lag) % chunk.tail(windowSize - lag));
     }
 
     // turn coor into a toeplitz
@@ -96,6 +95,7 @@ int main(int argc, char *argv[])
     // perform linear regression
     int order = 10;
     mlpack::LinearRegression lr(COOR, coorRow.subvec(1, order));
+    // mlpack::LinearRegression lr(COOR, chunk);
     auto coeff = lr.Parameters();
 
     // find max index of coor
