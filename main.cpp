@@ -76,9 +76,17 @@ int main(int argc, char *argv[])
     }
 
     // perform autocorrelation on the chunk vector
-    for (int lag = 0; lag < windowSize; lag++)
+    for (int s = 0; s < windowSize; s++)
     {
-      corr[lag] = arma ::accu(chunk.head(windowSize - lag) % chunk.tail(windowSize - lag));
+      float thisCorr = 0;
+      for (int lag = 1; lag < windowSize; lag++)
+      {
+        if ((s + lag) < windowSize)
+        {
+          thisCorr += chunk[s] * chunk[s + lag];
+        }
+      }
+      corr[s] = thisCorr;
     }
 
     // make a rowvec out of corr for mlpack
@@ -117,10 +125,11 @@ int main(int argc, char *argv[])
     }
 
     // calcate pitch in hz
-    float pitch = SAMPLERATE / static_cast<float>(maxIndex);
-
-    // decide on voiced or unvoiced. I have no idea what the threshold value should. Total correlation should be windowSize
-    float threshold = 250.0;
+    float pitch = SAMPLERATE / (.001f + static_cast<float>(maxIndex));
+    // std::cout << pitch;
+    std::cout << maxValue;
+    //   decide on voiced or unvoiced. I have no idea what the threshold value should. Total correlation should be windowSize
+    float threshold = 0.25;
     bool voiced = false;
     if (maxValue > threshold)
     {
