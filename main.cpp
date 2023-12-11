@@ -30,10 +30,11 @@ int main(int argc, char *argv[])
   // store in float array pSampleData
   float *pSampleData = new float[pWav->totalPCMFrameCount * pWav->channels];
   drwav_read_f32(pWav, pWav->totalPCMFrameCount, pSampleData);
-  drwav_close(pWav);
 
   // length of file
   int sigLength = pWav->totalPCMFrameCount;
+
+  drwav_close(pWav);
 
   // make a vec to store the signal
   arma::vec origSig = arma::vec(sigLength);
@@ -42,7 +43,7 @@ int main(int argc, char *argv[])
   for (int i = 0; i < sigLength; i++)
   {
     origSig[i] = pSampleData[i];
-    std::cout << origSig[i] << std::endl;
+    // std::cout << origSig[i] << std::endl;
   }
 
   // create vec for the output signal
@@ -51,11 +52,11 @@ int main(int argc, char *argv[])
   // define window size
   // if sample rate is 44100 a window of 300 samples would get us a little below 150hz, right?
   // may need to change this depending where samplerate ends up
-  int windowSize = 300;
+  int windowSize = 200;
   int hopSize = windowSize / 2;
 
   // create vec for the autocorrelation vector. the length is windowSize
-  arma::vec coor = arma::vec(windowSize);
+  arma::vec corr = arma::vec(windowSize);
 
   // outer loop for windowing
   for (int bin = 0; bin < (sigLength / hopSize); bin++)
@@ -77,35 +78,40 @@ int main(int argc, char *argv[])
     // perform autocorrelation on the chunk vector
     for (int lag = 0; lag < windowSize; lag++)
     {
-      coor[lag] = arma ::accu(chunk.head(windowSize - lag) % chunk.tail(windowSize - lag));
+      corr[lag] = arma ::accu(chunk.head(windowSize - lag) % chunk.tail(windowSize - lag));
     }
 
-    // turn coor into a toeplitz
-    arma::mat COOR = arma::toeplitz(coor);
+    // make a rowvec out of corr for mlpack
+    arma::rowvec corrRow = arma::rowvec(windowSize);
+    arma::rowvec chunkRow = arma::rowvec(windowSize);
 
-    // make a rowvec out of coor for mlpack
-    arma::rowvec coorRow = arma::vec(windowSize);
-
-    // write coor into coorRow
+    // write corr into corrRow
     for (int l = 0; l < windowSize; l++)
     {
-      coorRow[l] = coor[l];
+      corrRow[l] = corr[l];
     }
+    for (int l = 0; l < windowSize; l++)
+    {
+      chunkRow[l] = chunk[l];
+    }
+
+    // turn corr into a toeplitz
+    arma::mat CORR = arma::toeplitz(corr);
 
     // perform linear regression
     int order = 10;
-    mlpack::LinearRegression lr(COOR, coorRow.subvec(1, order));
-    // mlpack::LinearRegression lr(COOR, chunk);
+    mlpack::LinearRegression lr(CORR, corrRow);
+    // mlpack::LinearRegression lr(CORR, chunkRow);
     auto coeff = lr.Parameters();
 
-    // find max index of coor
+    // find max index of corr
     int maxIndex = 0;
-    float maxValue = coor[0];
+    float maxValue = corr[0];
     for (int m = 1; m < windowSize; m++)
     {
-      if (coor[m] > maxValue)
+      if (corr[m] > maxValue)
       {
-        maxValue = coor[m];
+        maxValue = corr[m];
         maxIndex = m;
       }
     }
@@ -114,7 +120,7 @@ int main(int argc, char *argv[])
     float pitch = SAMPLERATE / static_cast<float>(maxIndex);
 
     // decide on voiced or unvoiced. I have no idea what the threshold value should. Total correlation should be windowSize
-    float threshold = 150.0;
+    float threshold = 250.0;
     bool voiced = false;
     if (maxValue > threshold)
     {
@@ -166,7 +172,7 @@ int main(int argc, char *argv[])
   format.bitsPerSample = 32;
 
   pWav = drwav_open_file_write("out.wav", &format);
-  for (double d = 0; d < newSig.size(); d += 1)
+  for (int d = 0; d < newSig.size(); d++)
   {
     float f = newSig[d];
     drwav_write(pWav, 1, &f);
