@@ -7,7 +7,7 @@
 #define DR_WAV_IMPLEMENTATION
 #include "dr_wav.h"
 
-#define SAMPLERATE (44100)
+#define SAMPLERATE (48000)
 
 int main(int argc, char *argv[])
 {
@@ -42,6 +42,7 @@ int main(int argc, char *argv[])
   // write float array into vec
   for (int i = 0; i < sigLength; i++)
   {
+
     origSig[i] = pSampleData[i];
     // std::cout << origSig[i] << std::endl;
   }
@@ -98,19 +99,12 @@ int main(int argc, char *argv[])
     {
       corrRow[l] = corr[l];
     }
-    for (int l = 0; l < windowSize; l++)
-    {
-      chunkRow[l] = chunk[l];
-    }
 
     // turn corr into a toeplitz
     arma::mat CORR = arma::toeplitz(corr);
 
-    // perform linear regression
-    int order = 10;
-    mlpack::LinearRegression lr(CORR, corrRow);
-    // mlpack::LinearRegression lr(CORR, chunkRow);
-    auto coeff = lr.Parameters();
+    // solve for the filter coefficients
+    arma::vec coeff = solve(CORR, corr);
 
     // find max index of corr
     int maxIndex = 0;
@@ -127,9 +121,9 @@ int main(int argc, char *argv[])
     // calcate pitch in hz
     float pitch = SAMPLERATE / (.001f + static_cast<float>(maxIndex));
     // std::cout << pitch;
-    std::cout << maxValue;
+    std::cout << maxValue << std::endl;
     //   decide on voiced or unvoiced. I have no idea what the threshold value should. Total correlation should be windowSize
-    float threshold = 0.25;
+    float threshold = 0.6;
     bool voiced = false;
     if (maxValue > threshold)
     {
@@ -141,7 +135,7 @@ int main(int argc, char *argv[])
     {
       for (int n = 0; n < windowSize; n++)
       {
-        chunk[n] *= std::cos(2.0 * M_PI * pitch * n);
+        chunk[n] *= std::cos(2.0 * M_PI * pitch * n * (windowSize / SAMPLERATE));
       }
     }
 
@@ -153,14 +147,14 @@ int main(int argc, char *argv[])
 
     for (int p = 0; p < windowSize; p++)
     {
-      tempOut[p] = coeff(0) * chunk[p]; // Initialize with the direct term
+      tempOut[p] = coeff[0] * chunk[p]; // Initialize with the direct term
 
       for (int r = 1; r <= filterOrder; r++)
       {
         // Check if the index is within bounds before accessing the outputSignal vector
         if (p >= r)
         {
-          tempOut[p] += coeff(r) * tempOut(p - r);
+          tempOut[p] += coeff[r] * tempOut[p - r];
         }
       }
     }
