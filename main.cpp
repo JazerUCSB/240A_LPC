@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
   // define window size
   // if sample rate is 44100 a window of 300 samples would get us a little below 150hz, right?
   // may need to change this depending where samplerate ends up
-  int windowSize = 200;
+  int windowSize = 50;
   int hopSize = windowSize / 2;
 
   // create vec for the autocorrelation vector. the length is windowSize
@@ -113,7 +113,7 @@ int main(int argc, char *argv[])
     // std::cout << pitch;
     std::cout << maxValue << std::endl;
     //   decide on voiced or unvoiced. I have no idea what the threshold value should. Total correlation should be windowSize
-    float threshold = 0.6;
+    float threshold = 0.01;
     bool voiced = false;
     if (maxValue > threshold)
     {
@@ -126,6 +126,15 @@ int main(int argc, char *argv[])
       for (int n = 0; n < windowSize; n++)
       {
         chunk[n] *= std::cos(2.0 * M_PI * pitch * n * (windowSize / SAMPLERATE));
+      }
+    }
+
+    // if unvoiced multiply by randu
+    else if (!voiced)
+    {
+      for (int m = 0; m < windowSize; m++)
+      {
+        chunk[m] *= arma::randu() * 2.0 - 1.0;
       }
     }
 
