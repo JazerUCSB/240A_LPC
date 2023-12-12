@@ -90,16 +90,6 @@ int main(int argc, char *argv[])
       corr[s] = thisCorr;
     }
 
-    // make a rowvec out of corr for mlpack
-    arma::rowvec corrRow = arma::rowvec(windowSize);
-    arma::rowvec chunkRow = arma::rowvec(windowSize);
-
-    // write corr into corrRow
-    for (int l = 0; l < windowSize; l++)
-    {
-      corrRow[l] = corr[l];
-    }
-
     // turn corr into a toeplitz
     arma::mat CORR = arma::toeplitz(corr);
 
@@ -119,7 +109,7 @@ int main(int argc, char *argv[])
     }
 
     // calcate pitch in hz
-    float pitch = SAMPLERATE / (.001f + static_cast<float>(maxIndex));
+    float pitch = SAMPLERATE / (static_cast<float>(maxIndex));
     // std::cout << pitch;
     std::cout << maxValue << std::endl;
     //   decide on voiced or unvoiced. I have no idea what the threshold value should. Total correlation should be windowSize
