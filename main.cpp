@@ -37,24 +37,24 @@ int main(int argc, char *argv[])
   drwav_close(pWav);
 
   // make a vec to store the signal
-  arma::vec origSig = arma::vec(decLength);
+  arma::vec origSig = arma::vec(sigLength);
 
   // write float array into vec
   for (int i = 0; i < sigLength; i++)
   {
-    if (i % 6 == 0)
-    {
-      origSig[i / 6] = pSampleData[i];
-    }
+    // if (i % 6 == 0)
+    // {
+    origSig[i] = pSampleData[i];
+    //}
   }
 
   // create vec for the output signal
-  arma::vec newSig = arma::vec(decLength);
+  arma::vec newSig = arma::vec(sigLength);
 
   // define window size
-  int windowSize = 40;
+  int windowSize = 50;
   int hopSize = windowSize / 2;
-  int bins = decLength / hopSize;
+  int bins = sigLength / hopSize;
 
   // create vec for the autocorrelation vector. the length is windowSize
   arma::vec corr = arma::vec(windowSize);
@@ -76,17 +76,9 @@ int main(int argc, char *argv[])
     }
 
     // perform autocorrelation on the chunk vector
-    for (int s = 0; s < windowSize; s++)
+    for (int lag = 1; lag < windowSize; lag++)
     {
-      float thisCorr = 0;
-      for (int lag = 1; lag <= windowSize; lag++)
-      {
-        if ((s - lag) >= 0)
-        {
-          thisCorr += chunk[s] * chunk[s - lag];
-        }
-      }
-      corr[s] = thisCorr;
+      corr[lag] = arma::accu(chunk.head(windowSize - lag) % chunk.tail(windowSize - lag));
     }
 
     // find max index of corr
@@ -103,16 +95,16 @@ int main(int argc, char *argv[])
     }
 
     // calculate pitch in hz
-    double pitch = DOWN_SAMPLERATE / (static_cast<float>(maxIndex));
+    double pitch = SAMPLERATE / (static_cast<float>(maxIndex));
 
     // normalize corr
-    for (int u = 0; u < windowSize; u++)
-    {
+    // for (int u = 0; u < windowSize; u++)
+    // {
 
-      corr[u] /= maxValue;
-    }
+    //   corr[u] /= maxValue;
+    // }
     // std::cout << maxValue << std::endl;
-    //  create rowvec for mlpack
+    //   create rowvec for mlpack
     arma::rowvec corrRow = arma::rowvec(windowSize);
     for (int h = 0; h < windowSize; h++)
     {
@@ -121,20 +113,25 @@ int main(int argc, char *argv[])
 
     // turn corr into a toeplitz
     arma::mat CORR = arma::toeplitz(corr);
-
+    // float de = arma::det(CORR);
+    // std::cout << "de=" << de << std::endl;
     // solve for the filter coefficients
     mlpack::LinearRegression lr(CORR, corrRow);
     auto coeff = lr.Parameters();
+    // arma::vec coeff = arma::solve(CORR, corr);
+    //   std::cout << coeff[12] << std::endl;
 
     // decide on voiced or unvoiced.
-    float threshold = .005;
+    float threshold = .002;
 
     // if voiced make a pulse train
     if (maxValue > threshold)
     {
       for (int a = 0; a < windowSize; a++)
       {
-        chunk[a] = std::abs(std::sin(M_PI * pitch * a / DOWN_SAMPLERATE));
+        int rate = SAMPLERATE / pitch;
+        float val = a % rate < 2;
+        chunk[a] = val; // std::abs(cos(M_PI * pitch * a / windowSize));
       }
     }
     // if unvoiced randu
@@ -147,7 +144,7 @@ int main(int argc, char *argv[])
     }
 
     //   apply filter coefficients as an all pole filter
-    int filterOrder = coeff.size() - 1;
+    int filterOrder = 10; // coeff.size() - 1;
 
     // create temp output
     arma::vec newChunk = arma::vec(windowSize);
@@ -163,6 +160,8 @@ int main(int argc, char *argv[])
           newChunk[p] += coeff[r] * chunk[p - r];
         }
       }
+      // std::cout << chunk[p] << std::endl;
+      // std::cout << newChunk[p] << std::endl;
     }
 
     // write newChunk to newSig
@@ -178,7 +177,7 @@ int main(int argc, char *argv[])
   format.container = drwav_container_riff;
   format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
   format.channels = 1;
-  format.sampleRate = DOWN_SAMPLERATE;
+  format.sampleRate = SAMPLERATE;
   format.bitsPerSample = 32;
 
   pWav = drwav_open_file_write("out.wav", &format);
