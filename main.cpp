@@ -8,7 +8,7 @@
 #include "dr_wav.h"
 
 #define SAMPLERATE (48000)
-
+#define DOWN_SAMPLERATE (8000)
 int main(int argc, char *argv[])
 {
 
@@ -33,25 +33,28 @@ int main(int argc, char *argv[])
 
   // length of file
   int sigLength = pWav->totalPCMFrameCount;
-
+  int decLength = sigLength / 6;
   drwav_close(pWav);
 
   // make a vec to store the signal
-  arma::vec origSig = arma::vec(sigLength);
+  arma::vec origSig = arma::vec(decLength);
 
   // write float array into vec
   for (int i = 0; i < sigLength; i++)
   {
-    origSig[i] = pSampleData[i];
+    if (i % 6 == 0)
+    {
+      origSig[i / 6] = pSampleData[i];
+    }
   }
 
   // create vec for the output signal
-  arma::vec newSig = arma::vec(sigLength);
+  arma::vec newSig = arma::vec(decLength);
 
   // define window size
-  int windowSize = 100;
+  int windowSize = 40;
   int hopSize = windowSize / 2;
-  int bins = sigLength / hopSize;
+  int bins = decLength / hopSize;
 
   // create vec for the autocorrelation vector. the length is windowSize
   arma::vec corr = arma::vec(windowSize);
@@ -88,8 +91,8 @@ int main(int argc, char *argv[])
 
     // find max index of corr
     int maxIndex = 0;
-    float maxValue = corr[0];
-    for (int t = 1; t < windowSize; t++)
+    float maxValue = 0;
+    for (int t = 0; t < windowSize; t++)
     {
       if (corr[t] > maxValue)
 
@@ -100,7 +103,7 @@ int main(int argc, char *argv[])
     }
 
     // calculate pitch in hz
-    double pitch = SAMPLERATE / (static_cast<float>(maxIndex));
+    double pitch = DOWN_SAMPLERATE / (static_cast<float>(maxIndex));
 
     // normalize corr
     for (int u = 0; u < windowSize; u++)
@@ -108,8 +111,8 @@ int main(int argc, char *argv[])
 
       corr[u] /= maxValue;
     }
-
-    // create rowvec for mlpack
+    // std::cout << maxValue << std::endl;
+    //  create rowvec for mlpack
     arma::rowvec corrRow = arma::rowvec(windowSize);
     for (int h = 0; h < windowSize; h++)
     {
@@ -124,15 +127,14 @@ int main(int argc, char *argv[])
     auto coeff = lr.Parameters();
 
     // decide on voiced or unvoiced.
-    float threshold = .01;
+    float threshold = .005;
 
     // if voiced make a pulse train
     if (maxValue > threshold)
     {
       for (int a = 0; a < windowSize; a++)
       {
-        double wave = M_PI * static_cast<double>(pitch) * static_cast<double>(a) / (static_cast<double>(SAMPLERATE));
-        chunk[a] = std::abs(std::sin(wave));
+        chunk[a] = std::abs(std::sin(M_PI * pitch * a / DOWN_SAMPLERATE));
       }
     }
     // if unvoiced randu
@@ -140,7 +142,7 @@ int main(int argc, char *argv[])
     {
       for (int w = 0; w < windowSize; w++)
       {
-        chunk[w] = (arma::randu() * 2.0 - 1.0) * 0.5;
+        chunk[w] = (arma::randu() * 2.0 - 1.0) * 0.25;
       }
     }
 
@@ -168,7 +170,6 @@ int main(int argc, char *argv[])
     {
       float curHann = newChunk[s] * 0.5 * (1 - std::cos(2 * M_PI * s / (windowSize - 1)));
       newSig[hopSize * bin + s] += curHann;
-      // std::cout << newChunk[s] << std::endl;
     }
   }
 
@@ -177,7 +178,7 @@ int main(int argc, char *argv[])
   format.container = drwav_container_riff;
   format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
   format.channels = 1;
-  format.sampleRate = SAMPLERATE;
+  format.sampleRate = DOWN_SAMPLERATE;
   format.bitsPerSample = 32;
 
   pWav = drwav_open_file_write("out.wav", &format);
