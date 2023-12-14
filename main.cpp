@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
 
   // length of file
   int sigLength = pWav->totalPCMFrameCount;
-  int decLength = sigLength / 6;
+
   drwav_close(pWav);
 
   // make a vec to store the signal
@@ -42,22 +42,17 @@ int main(int argc, char *argv[])
   // write float array into vec
   for (int i = 0; i < sigLength; i++)
   {
-    // if (i % 6 == 0)
-    // {
     origSig[i] = pSampleData[i];
-    // }
-    // std::cout << origSig[i] << std::endl;
   }
 
   // create vec for the output signal
   arma::vec newSig = arma::vec(sigLength);
 
   // define window size
-  // if sample rate is 44100 a window of 300 samples would get us a little below 150hz, right?
-  // may need to change this depending where samplerate ends up
   int windowSize = 100;
   int hopSize = windowSize / 2;
   int bins = sigLength / hopSize;
+
   // create vec for the autocorrelation vector. the length is windowSize
   arma::vec corr = arma::vec(windowSize);
 
@@ -73,9 +68,7 @@ int main(int argc, char *argv[])
 
       // current value with hann window applied
       float curHann = origSig[bin * hopSize + j] * 0.5 * (1 - std::cos(2 * M_PI * j / (windowSize - 1)));
-      // std::cout << curHann << std::endl;
-      // std::cout << origSig[bin * hopSize + j] << std::endl;
-      //   write to temp
+
       chunk[j] = curHann;
     }
 
@@ -91,7 +84,6 @@ int main(int argc, char *argv[])
         }
       }
       corr[s] = thisCorr;
-      // std::cout << corr[s] << std::endl;
     }
 
     // find max index of corr
@@ -117,35 +109,28 @@ int main(int argc, char *argv[])
       corr[u] /= maxValue;
     }
 
-    // turn corr into a toeplitz
-    arma::mat CORR = arma::toeplitz(corr);
+    // create rowvec for mlpack
     arma::rowvec corrRow = arma::rowvec(windowSize);
-    // arma::mat invCORR = arma::pinv(CORR);
     for (int h = 0; h < windowSize; h++)
     {
       corrRow[h] = corr[h];
     }
 
+    // turn corr into a toeplitz
+    arma::mat CORR = arma::toeplitz(corr);
+
     // solve for the filter coefficients
     mlpack::LinearRegression lr(CORR, corrRow);
     auto coeff = lr.Parameters();
 
-    // arma::vec coeff = arma::solve(CORR, corr);
-    // arma::vec coeff = invCORR * corr;
-    // calculate pitch in hz
-    double pitch = SAMPLERATE / (static_cast<float>(maxIndex));
-    // std::cout << pitch << std::endl;
-    // std::cout << maxValue << std::endl;
-    //       decide on voiced or unvoiced. I have no idea what the threshold value should. Total correlation should be windowSize
+    // decide on voiced or unvoiced.
     float threshold = .01;
 
+    // if voiced make a pulse train
     if (maxValue > threshold)
     {
       for (int a = 0; a < windowSize; a++)
       {
-        // int rate = SAMPLERATE / pitch;
-        // int peak = (a % rate) < 4;
-        // chunk[a] = peak;
         double wave = M_PI * static_cast<double>(pitch) * static_cast<double>(a) / (static_cast<double>(SAMPLERATE));
         chunk[a] = std::abs(std::sin(wave));
       }
@@ -158,7 +143,7 @@ int main(int argc, char *argv[])
         chunk[w] = (arma::randu() * 2.0 - 1.0) * 0.5;
       }
     }
-    // std::cout << voiced << std::endl;
+
     //   apply filter coefficients as an all pole filter
     int filterOrder = coeff.size() - 1;
 
@@ -168,7 +153,7 @@ int main(int argc, char *argv[])
     for (int p = 0; p < windowSize; p++)
     {
       newChunk[p] = coeff[0] * chunk[p]; // Initialize with the direct term
-      // std::cout << chunk[p] << std::endl;
+
       for (int r = 1; r <= filterOrder; r++)
       {
         if (p > r)
@@ -176,9 +161,6 @@ int main(int argc, char *argv[])
           newChunk[p] += coeff[r] * chunk[p - r];
         }
       }
-      // std::cout << newChunk[p] << std::endl;
-      // std::cout << chunk[p] << std::endl;
-      // std::cout << coeff[p] << std::endl;
     }
 
     // write newChunk to newSig
